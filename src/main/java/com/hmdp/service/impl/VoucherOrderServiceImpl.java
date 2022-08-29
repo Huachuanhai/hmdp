@@ -10,6 +10,8 @@ import com.hmdp.service.IVoucherOrderService;
 import com.hmdp.service.IVoucherService;
 import com.hmdp.utils.RedisIdWorker;
 import com.hmdp.utils.UserHolder;
+import org.redisson.api.RLock;
+import org.redisson.api.RedissonClient;
 import org.springframework.aop.framework.AopContext;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -33,6 +35,9 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
 
     @Resource
     private RedisIdWorker redisIdWorker;
+
+    @Resource
+    private RedissonClient redissonClient;
 
     @Transactional(rollbackFor = Exception.class)
     @Override
@@ -60,22 +65,34 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
         }
 
         Long userId = UserHolder.getUser().getId();
-        synchronized (userId.toString().intern()){
-            //获取代理对象（事物）
-            IVoucherOrderService proxy = (IVoucherOrderService)AopContext.currentProxy();
-            return proxy.createVoucherOrder(voucherId);
+        //创建锁对象
+        RLock lock = redissonClient.getLock("lock:order" + userId);
+        // 获取锁
+        boolean isLock = lock.tryLock();
+        //判断是否获取锁成功
+        if (!isLock) {
+            return Result.fail("不允许重复下单");
         }
+
+        try {
+            //获取代理对象（事物）
+            IVoucherOrderService proxy = (IVoucherOrderService) AopContext.currentProxy();
+            return proxy.createVoucherOrder(voucherId);
+        } finally {
+            lock.unlock();
+        }
+
     }
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public Result createVoucherOrder(Long voucherId){
+    public Result createVoucherOrder(Long voucherId) {
         //5.一人一单
         Long userId = UserHolder.getUser().getId();
         //5.1查询订单
         Integer count = query().eq("user_id", userId).eq("voucher_id", voucherId).count();
         //5.2 判断是否存在
-        if(count > 0){
+        if (count > 0) {
             //用户已经购买过
             return Result.fail("用户已经购买过一次");
         }
