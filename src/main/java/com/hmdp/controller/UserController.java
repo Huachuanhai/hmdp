@@ -96,4 +96,22 @@ public class UserController {
         return Result.ok(userDTO);
     }
 
+    /**
+     * 签到
+     * @return Result
+     */
+    @PostMapping("/sign")
+    public Result sign(){
+        return Result.ok(userService.sign());
+    }
+
+    /**
+     * 连续签到统计
+     * @return Result
+     */
+    @GetMapping("/signCount")
+    public Result signCount(){
+        return Result.ok(userService.signCount());
+    }
+
 }
